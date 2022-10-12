@@ -11,7 +11,7 @@ public class WindowContent : Drawable {
     public WindowContent() {
         this._playerAtSet = new Label();
         WindowContent self = this;
-        this._grid = new PlayingGrid(14, ref self) {
+        this._grid = new PlayingGrid(6, ref self) {
             Size = new Size(400, 400)
         };
         
