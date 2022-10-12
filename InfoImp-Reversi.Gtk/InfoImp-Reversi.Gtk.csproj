@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <RootNamespace>InfoImp_Reversi.Gtk</RootNamespace>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <OutputType>WinExe</OutputType>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Eto.Forms" Version="2.7.1" />
+      <PackageReference Include="Eto.Platform.Gtk" Version="2.7.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\InfoImp-Reversi\InfoImp-Reversi.csproj" />
+    </ItemGroup>
+
+</Project>
