@@ -5,28 +5,52 @@ namespace InfoImp_Reversi.GraphicsComponents;
 
 public class PlayingGrid : Drawable {
 
-    private const int DefaultCellCount = 4;
-    private readonly int _cellCount;
-    private readonly CellState[,] _cellStates;
-
+    /**
+     * The default amount of cells
+     * <seealso cref="CellCount"/>
+     */
+    public const int DefaultCellCount = 6;
+    
+    /**
+     * The amount of cells in a direction on the board
+     * E.g. if this is 4, the board is 4x4
+     */
+    public int CellCount { get; set; }
+    
+    /**
+     * Array that keeps track of the state of each cell on the board.
+     * Indexed by the cell coordinates
+     */
+    private CellState[,] _cellStates;
+    
     private readonly WindowContent _windowContent;
     
     public PlayingGrid(int? cellCount, ref WindowContent windowContent) {
         this._windowContent = windowContent;
         
-        if (cellCount % 2 != 0) {
-            throw new InvalidDataException("Cellcount must be an even number");
-        }
-        
         this.Paint += this.OnPaintEvent;
         this.MouseDown += this.OnMouseDownEvent;
         
-        this._cellCount = cellCount ?? DefaultCellCount;
-        this._cellStates = new CellState[this._cellCount, this._cellCount];
+        this.CellCount = cellCount ?? DefaultCellCount;
         
+        // Cant have uneven sizes due to the starting positions
+        if (!IsSizeValid(this.CellCount)) {
+            throw new InvalidDataException("Cellcount must be an even number");
+        }
+        
+        this._cellStates = new CellState[this.CellCount, this.CellCount];
         this.SetStartingStones();
     }
 
+    public static bool IsSizeValid(int size) {
+        return size % 2 == 0;
+    }
+    
+    public void ResetGrid() {
+        this._cellStates = new CellState[this.CellCount, this.CellCount];
+        this.SetStartingStones();
+    }
+    
     /// <summary>
     /// Set the starting stone configuration for the game.
     /// This will place two stone per player in the center of the
@@ -37,7 +61,7 @@ public class PlayingGrid : Drawable {
     /// </code>
     /// </summary>
     private void SetStartingStones() {
-        int topLeftCenter = this._cellCount / 2 - 1;
+        int topLeftCenter = this.CellCount / 2 - 1;
         this._cellStates[topLeftCenter, topLeftCenter] = CellState.Player1;
         this._cellStates[topLeftCenter + 1, topLeftCenter] = CellState.Player2;
         this._cellStates[topLeftCenter, topLeftCenter + 1] = CellState.Player2;
@@ -45,12 +69,16 @@ public class PlayingGrid : Drawable {
     }
 
     private void OnPaintEvent(object? sender, PaintEventArgs args) {
-        int cellSize = (int) Math.Floor(this.Width / (float) this._cellCount);
+        int cellSize = (int) Math.Floor(this.Width / (float) this.CellCount);
         
         Graphics g = args.Graphics;
         
         this.DrawGrid(ref g, cellSize);
         this.DrawCells(ref g, cellSize);
+
+        if (GameManager.IsHelpModeEnabled) {
+            this.DrawHelpCells(ref g, cellSize);
+        }
         
         g.Flush();
     }
@@ -63,7 +91,7 @@ public class PlayingGrid : Drawable {
     private void DrawGrid(ref Graphics graphics, int cellSize) {
         Pen pen = new Pen(Colors.Black);
         
-        for (int i = 1; i < this._cellCount; i++) {
+        for (int i = 1; i < this.CellCount; i++) {
             int offset = i * cellSize;
             
             // Rows
@@ -79,8 +107,8 @@ public class PlayingGrid : Drawable {
     /// <param name="graphics">A reference to the Graphics object</param>
     /// <param name="cellSize">The size of one cells</param>
     private void DrawCells(ref Graphics graphics, int cellSize) {
-        for (int x = 0; x < this._cellCount; x++) {
-            for (int y = 0; y < this._cellCount; y++) {
+        for (int x = 0; x < this.CellCount; x++) {
+            for (int y = 0; y < this.CellCount; y++) {
                 this.DrawCell(ref graphics, x, y, cellSize);
             }
         }
@@ -99,7 +127,8 @@ public class PlayingGrid : Drawable {
     ///     If the grid is 4x4, the bottom right cell has a coordinate of (3, 3)
     /// </param>
     /// <param name="cellSize">The size of a single cell</param>
-    private void DrawCell(ref Graphics graphics, int cellX, int cellY, int cellSize) {
+    /// <param name="helpCell">Whether this cell is a help cell</param>
+    private void DrawCell(ref Graphics graphics, int cellX, int cellY, int cellSize, bool helpCell = false) {
         // The diameter of the circle to draw
         float circleSize = cellSize * 0.7f;
         // Compute beforehand to save a multiplication
@@ -113,9 +142,19 @@ public class PlayingGrid : Drawable {
         // Get the state of the cell and the color associated with the state
         CellState cellState = this._cellStates[cellX, cellY];
         Color color = GetColor(cellState);
+
+        float halfCircle = circleSize / 2f;
+        float posX = cx - halfCircle;
+        float posY = cy - halfCircle;
         
-        // Draw the stone
-        graphics.FillEllipse(color, cx - circleSize / 2f, cy - circleSize / 2f, circleSize, circleSize);
+        if (helpCell) {
+            // Draw a stone, but only the outline
+            graphics.DrawEllipse(Colors.Gray, posX, posY, circleSize, circleSize);
+            graphics.Flush();
+        } else {
+            // Draw the stone
+            graphics.FillEllipse(color, posX, posY, circleSize, circleSize);
+        }
     }
 
     /// <summary>
@@ -146,7 +185,12 @@ public class PlayingGrid : Drawable {
             return;
         }
         
-        int cellSize = this.Width / this._cellCount;
+        // Dont handle clicks once the game is over
+        if (GameManager.IsGameComplete) {
+            return;
+        }
+        
+        int cellSize = this.Width / this.CellCount;
         // Get the Cell coordinate where the mouse clicked
         int cellX = (int) (args.Location.X / cellSize);
         int cellY = (int) (args.Location.Y / cellSize);
@@ -179,12 +223,59 @@ public class PlayingGrid : Drawable {
         // Redraw the window content to update fields
         this._windowContent.Invalidate();
 
+        (int, int)[] player1Cells = this.GetAllCellsOfState(CellState.Player1);
+        (int, int)[] player2Cells = this.GetAllCellsOfState(CellState.Player2);
+        
+        this._windowContent.SetScoreText(player1Cells.Length, player2Cells.Length);
+        
+        if (player1Cells.Length + player2Cells.Length == this.CellCount * this.CellCount) {
+            string playerWon = player1Cells.Length > player2Cells.Length ? "1" : "2";
+            this._windowContent.SetErrorLabel($"Player {playerWon} has won!");
+            GameManager.IsGameComplete = true;
+            return;
+        }
+        
         // The other player is now at set
         GameManager.PlayerAtSet = GameManager.PlayerAtSet switch {
             PlayingPlayer.Player1 => PlayingPlayer.Player2,
             PlayingPlayer.Player2 => PlayingPlayer.Player1,
             _ => throw new NotImplementedException("Case not implemented")
         };
+    }
+
+    /**
+     * Draw help cells. These are cells indicating to the player where they may place their next stone
+     */
+    private void DrawHelpCells(ref Graphics graphics, int cellSize) {
+        CellState wantedState = this.GetOtherPlayerCellState(GameManager.PlayerAtSet);
+        (int x, int y)[] cellsOfState = this.GetAllCellsOfState(wantedState);
+
+        foreach ((int x, int y) in cellsOfState) {
+            NeighborStates neighborStates = this.GetNeighborStates(x, y);
+            (int nx, int ny)[] eligibleNeighbors = neighborStates.GetNeighborCellsOfState(CellState.None, x, y);
+            foreach ((int nx, int ny) in eligibleNeighbors) {
+                if (this.GetCellState(nx, ny) == CellState.None) {
+                    this.DrawCell(ref graphics, nx, ny, cellSize, true);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get all cells on the board with a specific state
+     */
+    private (int x, int y)[] GetAllCellsOfState(CellState requiredState) {
+        List<(int x, int y)> result = new List<(int x, int y)>();
+        for (int x = 0; x < this.CellCount; x++) {
+            for (int y = 0; y < this.CellCount; y++) {
+                CellState state = this._cellStates[x, y];
+                if (state == requiredState) {
+                    result.Add((x, y));
+                }
+            }
+        }
+
+        return result.ToArray();
     }
 
     /// <summary>
@@ -232,6 +323,23 @@ public class PlayingGrid : Drawable {
             if (this.BottomRight == cellState) return true;
 
             return false;
+        }
+
+        /**
+         * Get the neighboring cells of a cell that have a set state
+         */
+        public (int x, int y)[] GetNeighborCellsOfState(CellState cellState, int x, int y) {
+            List<(int x, int y)> result = new List<(int x, int y)>();
+            if (this.TopLeft != null && this.TopLeft == cellState) result.Add((x - 1, y - 1));
+            if (this.Top != null && this.Top == cellState) result.Add((x, y - 1));
+            if (this.TopRight != null && this.TopRight == cellState) result.Add((x + 1, y - 1));
+            if (this.Left != null && this.Left == cellState) result.Add((x - 1, y));
+            if (this.Right != null && this.Right == cellState) result.Add((x + 1, y));
+            if (this.BottomLeft != null && this.BottomLeft == cellState) result.Add((x - 1, y + 1));
+            if (this.Bottom != null && this.Bottom == cellState) result.Add((x, y + 1));
+            if (this.BottomRight != null && this.BottomRight == cellState) result.Add((x + 1, y + 1));
+
+            return result.ToArray();
         }
     }
     
@@ -330,12 +438,12 @@ public class PlayingGrid : Drawable {
         // thus it has 8 valid neighbors
         return new NeighborStates {
             TopLeft = this._cellStates[cellX - 1, cellY - 1],
-            Top = this._cellStates[cellX, cellY + 1],
+            Top = this._cellStates[cellX, cellY - 1],
             TopRight = this._cellStates[cellX + 1, cellY - 1],
             Left = this._cellStates[cellX - 1, cellY],
             Right = this._cellStates[cellX + 1, cellY],
             BottomLeft = this._cellStates[cellX - 1, cellY + 1],
-            Bottom = this._cellStates[cellX, cellY - 1],
+            Bottom = this._cellStates[cellX, cellY + 1],
             BottomRight = this._cellStates[cellX + 1, cellY + 1],
         };
     }
@@ -412,7 +520,7 @@ public class PlayingGrid : Drawable {
         this.ProcessCellDirection(
             playingPlayer,
             (cellX, cellY),
-            (tx, ty) => tx < this._cellCount - 1 && ty > 0,
+            (tx, ty) => tx < this.CellCount - 1 && ty > 0,
             (tx, ty) => (++tx, --ty)
         );
         
@@ -420,7 +528,7 @@ public class PlayingGrid : Drawable {
         this.ProcessCellDirection(
             playingPlayer,
             (cellX, cellY),
-            (tx, _) => tx < this._cellCount - 1,
+            (tx, _) => tx < this.CellCount - 1,
             (tx, ty) => (++tx, ty) 
         );
         
@@ -428,7 +536,7 @@ public class PlayingGrid : Drawable {
         this.ProcessCellDirection(
             playingPlayer,
             (cellX, cellY),
-            (tx, ty) => tx < this._cellCount - 1 && ty < this._cellCount - 1,
+            (tx, ty) => tx < this.CellCount - 1 && ty < this.CellCount - 1,
             (tx, ty) => (++tx, ++ty)
         );
         
@@ -436,7 +544,7 @@ public class PlayingGrid : Drawable {
         this.ProcessCellDirection(
             playingPlayer,
             (cellX, cellY),
-            (_, ty) => ty < this._cellCount - 1,
+            (_, ty) => ty < this.CellCount - 1,
             (tx, ty) => (tx, ++ty)
         );
         
@@ -444,7 +552,7 @@ public class PlayingGrid : Drawable {
         this.ProcessCellDirection(
             playingPlayer,
             (cellX, cellY),
-            (tx, ty) => tx > 0 && ty < this._cellCount - 1,
+            (tx, ty) => tx > 0 && ty < this.CellCount - 1,
             (tx, ty) => (--tx, ++ty) // F
         );
         
@@ -549,7 +657,7 @@ public class PlayingGrid : Drawable {
     /// <returns>The side the cell is located on, or null if it is not located on any side
     /// </returns>
     private CellSide? GetCellSide(int cellX, int cellY) {
-        int cellCount = this._cellCount;
+        int cellCount = this.CellCount;
         
         if (cellX > 0 && cellX < cellCount - 1 && cellY == 0) {
             return CellSide.Top;
@@ -577,8 +685,8 @@ public class PlayingGrid : Drawable {
     /// <param name="cellY"></param>
     /// <returns>Whether a cell lays on the corner of the playing field</returns>
     private bool IsCellCorner(int cellX, int cellY) {
-        return (cellX == 0 || cellX == this._cellCount - 1) && // Top left, right 
-               (cellY == 0 || cellY == this._cellCount - 1); // Bottom left, right
+        return (cellX == 0 || cellX == this.CellCount - 1) && // Top left, right 
+               (cellY == 0 || cellY == this.CellCount - 1); // Bottom left, right
     }
 
     /// <summary>
@@ -602,15 +710,15 @@ public class PlayingGrid : Drawable {
             return CellCornerPosition.TopLeft;
         } 
         
-        if (cellX == this._cellCount - 1 && cellY == 0) {
+        if (cellX == this.CellCount - 1 && cellY == 0) {
             return CellCornerPosition.TopRight;
         }
 
-        if (cellX == 0 && cellY == this._cellCount - 1) {
+        if (cellX == 0 && cellY == this.CellCount - 1) {
             return CellCornerPosition.BottomLeft;
         }
 
-        if (cellX == this._cellCount - 1 && cellY == this._cellCount - 1) {
+        if (cellX == this.CellCount - 1 && cellY == this.CellCount - 1) {
             return CellCornerPosition.BottomRight;
         }
         
