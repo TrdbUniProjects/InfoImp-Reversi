@@ -10,4 +10,6 @@ public static class GameManager {
     public static bool IsHelpModeEnabled { get; set; } = true;
 
     public static bool IsGameComplete { get; set; } = false;
+
+    public static bool PlayerCouldNotPlay { get; set; } = false;
 }

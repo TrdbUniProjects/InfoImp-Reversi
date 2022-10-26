@@ -77,7 +77,19 @@ public class PlayingGrid : Drawable {
         this.DrawCells(ref g, cellSize);
 
         if (GameManager.IsHelpModeEnabled) {
-            this.DrawHelpCells(ref g, cellSize);
+            bool playerCanPlay = this.DrawHelpCells(ref g, cellSize);
+
+            if (playerCanPlay) {
+                GameManager.PlayerCouldNotPlay = false;
+            } else {
+                if (GameManager.PlayerCouldNotPlay) {
+                    if (this.CheckForWinnerAndUpdateLabels()) {
+                        return;
+                    }
+                } else {
+                    this.SwapPlayingPlayer();
+                }
+            }
         }
         
         g.Flush();
@@ -223,6 +235,18 @@ public class PlayingGrid : Drawable {
         // Redraw the window content to update fields
         this._windowContent.Invalidate();
 
+        if (this.CheckForWinnerAndUpdateLabels()) {
+            return;
+        }
+
+        this.SwapPlayingPlayer();
+    }
+
+    /**
+     * Check whether there was a winner and update the score and winner labels accordingly
+     * <returns><code>true</code> if there was a winner</returns>
+     */
+    private bool CheckForWinnerAndUpdateLabels() {
         (int, int)[] player1Cells = this.GetAllCellsOfState(CellState.Player1);
         (int, int)[] player2Cells = this.GetAllCellsOfState(CellState.Player2);
         
@@ -232,9 +256,16 @@ public class PlayingGrid : Drawable {
             string playerWon = player1Cells.Length > player2Cells.Length ? "1" : "2";
             this._windowContent.SetErrorLabel($"Player {playerWon} has won!");
             GameManager.IsGameComplete = true;
-            return;
+            return true;
         }
-        
+
+        return false;
+    }
+
+    /**
+     * Swap the player at set
+     */
+    private void SwapPlayingPlayer() {
         // The other player is now at set
         GameManager.PlayerAtSet = GameManager.PlayerAtSet switch {
             PlayingPlayer.Player1 => PlayingPlayer.Player2,
@@ -242,23 +273,29 @@ public class PlayingGrid : Drawable {
             _ => throw new NotImplementedException("Case not implemented")
         };
     }
-
+    
     /**
      * Draw help cells. These are cells indicating to the player where they may place their next stone
+     * <returns>Returns <code>true</code> if there was at least one possible move</returns>
      */
-    private void DrawHelpCells(ref Graphics graphics, int cellSize) {
+    private bool DrawHelpCells(ref Graphics graphics, int cellSize) {
         CellState wantedState = this.GetOtherPlayerCellState(GameManager.PlayerAtSet);
         (int x, int y)[] cellsOfState = this.GetAllCellsOfState(wantedState);
 
+        bool anySetPossible = false;
+        
         foreach ((int x, int y) in cellsOfState) {
             NeighborStates neighborStates = this.GetNeighborStates(x, y);
             (int nx, int ny)[] eligibleNeighbors = neighborStates.GetNeighborCellsOfState(CellState.None, x, y);
             foreach ((int nx, int ny) in eligibleNeighbors) {
                 if (this.GetCellState(nx, ny) == CellState.None) {
                     this.DrawCell(ref graphics, nx, ny, cellSize, true);
+                    anySetPossible = true;
                 }
             }
         }
+
+        return anySetPossible;
     }
 
     /**
