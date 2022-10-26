@@ -1,24 +1,40 @@
 using Eto.Drawing;
 using Eto.Forms;
+using InfoImp_Reversi.State;
 
-namespace InfoImp_Reversi.GraphicsComponents; 
+namespace InfoImp_Reversi.GraphicsComponents;
 
 public class WindowContent : Drawable {
 
+    /// <summary>
+    /// The label showing who is at set
+    /// </summary>
     private readonly Label _playerAtSet;
+    /// <summary>
+    /// The playing grid
+    /// </summary>
     private readonly PlayingGrid _grid;
-
-    private readonly Label _errorTextLabel = new Label();
+    /// <summary>
+    /// Lable showing informational text to the user
+    /// </summary>
+    private readonly Label _infoTextLabel = new Label();
+    /// <summary>
+    /// Textbox where the user can entire the board's size
+    /// </summary>
     private readonly TextBox _sizeTextBox = new TextBox {
         Text = PlayingGrid.DefaultCellCount.ToString()
     };
-
+    /// <summary>
+    /// Score for player 1
+    /// </summary>
     private readonly Label _player1Stones = new Label {
         Font = new Font(SystemFont.Default, 20),
         VerticalAlignment = VerticalAlignment.Center,
         Text = "2 stones"
     };
-
+    /// <summary>
+    /// Score for player 2
+    /// </summary>
     private readonly Label _player2Stones = new Label {
         Font = new Font(SystemFont.Default, 20),
         VerticalAlignment = VerticalAlignment.Center,
@@ -46,7 +62,7 @@ public class WindowContent : Drawable {
 
         this.Content = new StackLayout {
             Items = {
-                this._errorTextLabel,
+                this._infoTextLabel,
                 new TableLayout {
                     Spacing = new Size(10, 5),
                     Rows = {
@@ -83,7 +99,7 @@ public class WindowContent : Drawable {
                                     Rows = {
                                         new TableRow {
                                             Cells = {
-                                                new ScoreStone(GameManager.PlayerAColor) {
+                                                new ScoreStone(GameManager.Player1Color) {
                                                     Size = new Size(50, 50)
                                                 },
                                                 this._player1Stones
@@ -91,7 +107,7 @@ public class WindowContent : Drawable {
                                         },
                                         new TableRow {
                                             Cells = {
-                                                new ScoreStone(GameManager.PlayerBColor) {
+                                                new ScoreStone(GameManager.Player2Color) {
                                                     Size = new Size(50, 50)
                                                 },
                                                 this._player2Stones
@@ -125,8 +141,8 @@ public class WindowContent : Drawable {
     }
     
     private void OnResetBtnClicked(object? sender, EventArgs args) {
-        this._errorTextLabel.Text = "";
-        this._errorTextLabel.Invalidate();
+        this._infoTextLabel.Text = "";
+        this._infoTextLabel.Invalidate();
         
         this.UpdateSizeIfNeeded();
         this.ResetGame();
@@ -143,8 +159,8 @@ public class WindowContent : Drawable {
 
         int newSizeNotNull = newSize ?? default(int);
         if (!PlayingGrid.IsSizeValid(newSizeNotNull)) {
-            this._errorTextLabel.Text = $"Size {newSize} is not valid. It must be an even number";
-            this._errorTextLabel.Invalidate();
+            this._infoTextLabel.Text = $"Size {newSize} is not valid. It must be an even number";
+            this._infoTextLabel.Invalidate();
             return;
         }
         
@@ -172,8 +188,8 @@ public class WindowContent : Drawable {
         // Parse the new count;
         bool isValid = Util.IsValidInt(this._sizeTextBox.Text);
         if (!isValid) {
-            this._errorTextLabel.Text = $"Size has an invalid value: {this._sizeTextBox.Text}";
-            this._errorTextLabel.Invalidate();
+            this._infoTextLabel.Text = $"Size has an invalid value: {this._sizeTextBox.Text}";
+            this._infoTextLabel.Invalidate();
             return (false, null);
         }
 
@@ -185,11 +201,11 @@ public class WindowContent : Drawable {
         switch (GameManager.PlayerAtSet) {
             case PlayingPlayer.Player1:
                 this._playerAtSet.Text = "At set: Player 1";
-                this._playerAtSet.TextColor = GameManager.PlayerAColor;
+                this._playerAtSet.TextColor = GameManager.Player1Color;
                 break;
             case PlayingPlayer.Player2:
                 this._playerAtSet.Text = "At set: Player 2";
-                this._playerAtSet.TextColor = GameManager.PlayerBColor;
+                this._playerAtSet.TextColor = GameManager.Player2Color;
                 break;
             default:
                 throw new NotImplementedException("Case not implemented");
@@ -198,11 +214,11 @@ public class WindowContent : Drawable {
     }
 
     /**
-     * Set the text of the error label
+     * Set the text of the info label
      */
-    public void SetErrorLabel(string text) {
-        this._errorTextLabel.Text = text;
-        this._errorTextLabel.Invalidate();
+    public void SetInfoLabel(string text) {
+        this._infoTextLabel.Text = text;
+        this._infoTextLabel.Invalidate();
     }
     
 }

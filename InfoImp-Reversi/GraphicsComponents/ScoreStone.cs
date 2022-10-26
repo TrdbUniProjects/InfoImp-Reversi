@@ -3,8 +3,14 @@ using Eto.Forms;
 
 namespace InfoImp_Reversi.GraphicsComponents; 
 
+/// <summary>
+/// A ciruclar stone with a color
+/// </summary>
 public class ScoreStone : Drawable {
 
+    /// <summary>
+    /// The color of the stone
+    /// </summary>
     private readonly Color _color;
     
     public ScoreStone(Color color) {

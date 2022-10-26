@@ -1,5 +1,7 @@
 using Eto.Drawing;
 using Eto.Forms;
+using InfoImp_Reversi.Exceptions;
+using InfoImp_Reversi.State;
 
 namespace InfoImp_Reversi.GraphicsComponents;
 
@@ -76,20 +78,18 @@ public class PlayingGrid : Drawable {
         this.DrawGrid(ref g, cellSize);
         this.DrawCells(ref g, cellSize);
 
-        if (GameManager.IsHelpModeEnabled) {
-            bool playerCanPlay = this.DrawHelpCells(ref g, cellSize);
+        bool playerCanPlay = this.DrawHelpCellsIfEnabled(ref g, cellSize);
 
-            if (playerCanPlay) {
-                GameManager.PlayerCouldNotPlay = false;
-            } else {
-                if (GameManager.PlayerCouldNotPlay) {
-                    if (this.CheckForWinnerAndUpdateLabels()) {
-                        return;
-                    }
-                } else {
-                    GameManager.PlayerCouldNotPlay = true;
-                    this.SwapPlayingPlayer();
+        if (playerCanPlay) {
+            GameManager.PlayerCouldNotPlay = false;
+        } else {
+            if (GameManager.PlayerCouldNotPlay) {
+                if (this.CheckForWinnerAndUpdateLabels()) {
+                    return;
                 }
+            } else {
+                GameManager.PlayerCouldNotPlay = true;
+                GameManager.SwapPlayingPlayer();
             }
         }
         
@@ -179,9 +179,9 @@ public class PlayingGrid : Drawable {
     private static Color GetColor(CellState cellState) {
         return cellState switch {
             CellState.None => Color.FromArgb(0, 0, 0, 0),
-            CellState.Player1 => GameManager.PlayerAColor,
-            CellState.Player2 => GameManager.PlayerBColor,
-            _ => throw new NotImplementedException("Case not implemented")
+            CellState.Player1 => GameManager.Player1Color,
+            CellState.Player2 => GameManager.Player2Color,
+            _ => throw new CaseNotImplementedException()
         };
     }
  
@@ -240,7 +240,7 @@ public class PlayingGrid : Drawable {
             return;
         }
 
-        this.SwapPlayingPlayer();
+        GameManager.SwapPlayingPlayer();
     }
 
     /**
@@ -252,47 +252,41 @@ public class PlayingGrid : Drawable {
         (int, int)[] player2Cells = this.GetAllCellsOfState(CellState.Player2);
         
         this._windowContent.SetScoreText(player1Cells.Length, player2Cells.Length);
-        
-        if (player1Cells.Length + player2Cells.Length == this.CellCount * this.CellCount) {
-            string playerWon = player1Cells.Length > player2Cells.Length ? "1" : "2";
-            this._windowContent.SetErrorLabel($"Player {playerWon} has won!");
-            GameManager.IsGameComplete = true;
-            return true;
+
+        if (player1Cells.Length + player2Cells.Length != this.CellCount * this.CellCount) {
+            return false;
         }
+        
+        string playerWon = player1Cells.Length > player2Cells.Length ? "1" : "2";
+        this._windowContent.SetInfoLabel($"Player {playerWon} has won!");
+        GameManager.IsGameComplete = true;
+        return true;
 
-        return false;
     }
 
     /**
-     * Swap the player at set
-     */
-    private void SwapPlayingPlayer() {
-        // The other player is now at set
-        GameManager.PlayerAtSet = GameManager.PlayerAtSet switch {
-            PlayingPlayer.Player1 => PlayingPlayer.Player2,
-            PlayingPlayer.Player2 => PlayingPlayer.Player1,
-            _ => throw new NotImplementedException("Case not implemented")
-        };
-    }
-    
-    /**
-     * Draw help cells. These are cells indicating to the player where they may place their next stone
+     * Draw help cells, if it is enabled. These are cells indicating to the player where they may place their next stone.
+     * If the help cells are disabled, it'll only return whether there would be at least one help cell drawn. 
      * <returns>Returns <code>true</code> if there was at least one possible move</returns>
      */
-    private bool DrawHelpCells(ref Graphics graphics, int cellSize) {
-        CellState wantedState = this.GetOtherPlayerCellState(GameManager.PlayerAtSet);
+    private bool DrawHelpCellsIfEnabled(ref Graphics graphics, int cellSize) {
+        CellState wantedState = GameManager.GetOtherPlayerCellState(GameManager.PlayerAtSet);
         (int x, int y)[] cellsOfState = this.GetAllCellsOfState(wantedState);
 
         bool anySetPossible = false;
         
         foreach ((int x, int y) in cellsOfState) {
             NeighborStates neighborStates = this.GetNeighborStates(x, y);
-            (int nx, int ny)[] eligibleNeighbors = neighborStates.GetNeighborCellsOfState(CellState.None, x, y);
+            IEnumerable<(int x, int y)> eligibleNeighbors = neighborStates.GetNeighborCellsOfState(CellState.None, x, y);
             foreach ((int nx, int ny) in eligibleNeighbors) {
-                if (this.GetCellState(nx, ny) == CellState.None) {
-                    this.DrawCell(ref graphics, nx, ny, cellSize, true);
-                    anySetPossible = true;
+                if (this.GetCellState(nx, ny) != CellState.None) {
+                    continue;
                 }
+                
+                if (GameManager.IsHelpModeEnabled) {
+                    this.DrawCell(ref graphics, nx, ny, cellSize, true);
+                }
+                anySetPossible = true;
             }
         }
 
@@ -333,14 +327,11 @@ public class PlayingGrid : Drawable {
         /// <returns>Whether the placement is valid</returns>
         /// <exception cref="NotImplementedException"></exception>
         public bool IsPlacementValid(PlayingPlayer playingPlayer) {
-            switch (playingPlayer) {
-                case PlayingPlayer.Player1:
-                    return this.IsAnyCellOfState(CellState.Player2);
-                case PlayingPlayer.Player2:
-                    return this.IsAnyCellOfState(CellState.Player1);
-                default:
-                    throw new NotImplementedException("Case not implemented");
-            }
+            return playingPlayer switch {
+                PlayingPlayer.Player1 => this.IsAnyCellOfState(CellState.Player2),
+                PlayingPlayer.Player2 => this.IsAnyCellOfState(CellState.Player1),
+                _ => throw new CaseNotImplementedException()
+            };
         }
 
         /// <summary>
@@ -366,7 +357,7 @@ public class PlayingGrid : Drawable {
         /**
          * Get the neighboring cells of a cell that have a set state
          */
-        public (int x, int y)[] GetNeighborCellsOfState(CellState cellState, int x, int y) {
+        public IEnumerable<(int x, int y)> GetNeighborCellsOfState(CellState cellState, int x, int y) {
             List<(int x, int y)> result = new List<(int x, int y)>();
             if (this.TopLeft != null && this.TopLeft == cellState) result.Add((x - 1, y - 1));
             if (this.Top != null && this.Top == cellState) result.Add((x, y - 1));
@@ -393,38 +384,37 @@ public class PlayingGrid : Drawable {
         // A corner cell only has 3 valid neighbors
         if (this.IsCellCorner(cellX, cellY)) {
             // Which neighbor depends on which corner the cell is located ats
-            switch (this.GetCellCornerPosition(cellX, cellY)) {
-                case CellCornerPosition.TopLeft:
+            return this.GetCellCornerPosition(cellX, cellY) switch {
+                CellCornerPosition.TopLeft =>
                     // Can only check cell to the right and cell below
-                    return new NeighborStates {
+                    new NeighborStates {
                         Right = this._cellStates[1, 0],
                         Bottom = this._cellStates[0, 1],
                         BottomRight = this._cellStates[1, 1],
-                    };
-                case CellCornerPosition.TopRight:
+                    },
+                CellCornerPosition.TopRight =>
                     // Can only check cell to the left and cell below
-                    return new NeighborStates {
-                        Left = this._cellStates[cellX - 1, 0], 
+                    new NeighborStates {
+                        Left = this._cellStates[cellX - 1, 0],
                         Bottom = this._cellStates[cellX, 1],
                         BottomLeft = this._cellStates[cellX - 1, cellY + 1],
-                    };
-                case CellCornerPosition.BottomLeft:
+                    },
+                CellCornerPosition.BottomLeft =>
                     // Can only check cell to the right and cell to the top
-                    return new NeighborStates {
-                        Right = this._cellStates[1, cellY], 
+                    new NeighborStates {
+                        Right = this._cellStates[1, cellY],
                         Top = this._cellStates[0, cellY - 1],
                         TopRight = this._cellStates[cellX + 1, cellY - 1],
-                    };
-                case CellCornerPosition.BottomRight:
+                    },
+                CellCornerPosition.BottomRight =>
                     // Can only check cell to the left and cell to the top
-                    return new NeighborStates {
-                        Left = this._cellStates[cellX - 1, cellY], 
+                    new NeighborStates {
+                        Left = this._cellStates[cellX - 1, cellY],
                         Top = this._cellStates[cellX, cellY - 1],
                         TopLeft = this._cellStates[cellX - 1, cellY - 1],
-                    };    
-                default:
-                    throw new NotImplementedException("Case not implemented");
-            }
+                    },
+                _ => throw new CaseNotImplementedException()
+            };
         }
         
         CellSide? cellSide = this.GetCellSide(cellX, cellY);
@@ -432,43 +422,41 @@ public class PlayingGrid : Drawable {
         // A cell on a side has 5 valid neighbors
         if (cellSide != null) {
             // Which valid neightbor depends on which side the cell is located at
-            switch (cellSide) {
-                case CellSide.Top:
-                    return new NeighborStates {
+            return cellSide switch {
+                CellSide.Top =>
+                    new NeighborStates {
                         Left = this._cellStates[cellX - 1, cellY],
                         Right = this._cellStates[cellX + 1, cellY],
                         Bottom = this._cellStates[cellX, cellY + 1],
                         BottomLeft = this._cellStates[cellX - 1, cellY + 1],
                         BottomRight = this._cellStates[cellX + 1, cellY + 1],
-                    };
-                case CellSide.Left:
-                    NeighborStates states =  new NeighborStates {
+                    },
+                CellSide.Left =>
+                    new NeighborStates {
                         Top = this._cellStates[cellX, cellY + 1],
                         Bottom = this._cellStates[cellX, cellY - 1],
                         Right = this._cellStates[cellX + 1, cellY],
                         TopRight = this._cellStates[cellX + 1, cellY - 1],
                         BottomRight = this._cellStates[cellX + 1, cellY + 1],
-                    };
-                    return states;
-                case CellSide.Right:
-                    return new NeighborStates {
+                    },
+                CellSide.Right =>
+                    new NeighborStates {
                         Top = this._cellStates[cellX, cellY + 1],
                         Bottom = this._cellStates[cellX, cellY - 1],
                         Left = this._cellStates[cellX - 1, cellY],
                         TopLeft = this._cellStates[cellX - 1, cellY + 1],
                         BottomLeft = this._cellStates[cellX - 1, cellY - 1],
-                    };
-                case CellSide.Bottom:
-                    return new NeighborStates {
+                    },
+                CellSide.Bottom =>
+                    new NeighborStates {
                         Top = this._cellStates[cellX, cellY - 1],
                         Left = this._cellStates[cellX - 1, cellY],
                         Right = this._cellStates[cellX + 1, cellY],
                         TopLeft = this._cellStates[cellX - 1, cellY - 1],
                         TopRight = this._cellStates[cellX + 1, cellY - 1],
-                    };
-                default:
-                    throw new NotImplementedException("Case not implemented");
-            }
+                    },
+                _ => throw new CaseNotImplementedException()
+            };
         }
         
         // Not a side nor a corner
@@ -503,31 +491,11 @@ public class PlayingGrid : Drawable {
     /// <returns>The CellState</returns>
     /// <exception cref="NotImplementedException"></exception>
     private CellState GetPlayingPlayerCellState(PlayingPlayer playingPlayer) {
-        switch (playingPlayer) {
-            case PlayingPlayer.Player1:
-                return CellState.Player1;
-            case PlayingPlayer.Player2:
-                return CellState.Player2;
-            default:
-                throw new NotImplementedException("Case not implemented");
-        }
-    }
-
-    /// <summary>
-    /// Get the CellState of the player not currently playing
-    /// </summary>
-    /// <param name="playingPlayer">The player currently playing</param>
-    /// <returns>The CellState</returns>
-    /// <exception cref="NotImplementedException"></exception>
-    private CellState GetOtherPlayerCellState(PlayingPlayer playingPlayer) {
-        switch (playingPlayer) {
-            case PlayingPlayer.Player1:
-                return CellState.Player2;
-            case PlayingPlayer.Player2:
-                return CellState.Player1;
-            default:
-                throw new NotImplementedException("Case not implemented");
-        }
+        return playingPlayer switch {
+            PlayingPlayer.Player1 => CellState.Player1,
+            PlayingPlayer.Player2 => CellState.Player2,
+            _ => throw new CaseNotImplementedException()
+        };
     }
 
     /// <summary>
@@ -591,7 +559,7 @@ public class PlayingGrid : Drawable {
             playingPlayer,
             (cellX, cellY),
             (tx, ty) => tx > 0 && ty < this.CellCount - 1,
-            (tx, ty) => (--tx, ++ty) // F
+            (tx, ty) => (--tx, ++ty)
         );
         
         // Left
@@ -611,7 +579,7 @@ public class PlayingGrid : Drawable {
     /// <param name="condition">A function returning whether the input coordinates are still valid (i.e. within array bounds)</param>
     /// <param name="apply">A function returning the transformed cell coordinates</param>
     private void ProcessCellDirection(PlayingPlayer playingPlayer, (int x, int y) cellPos, Func<int, int, bool> condition, Func<int, int, (int x, int y)> apply) {
-        CellState otherPlayerState = this.GetOtherPlayerCellState(playingPlayer);
+        CellState otherPlayerState = GameManager.GetOtherPlayerCellState(playingPlayer);
         
         int x = cellPos.x;
         int y = cellPos.y;
@@ -660,20 +628,13 @@ public class PlayingGrid : Drawable {
     /// <exception cref="NotImplementedException"></exception>
     private void FlipStone(int cellX, int cellY) {
         CellState currentCellState = this.GetCellState(cellX, cellY);
-        CellState newCellState;
-        switch (currentCellState) {
-            case CellState.None:
-                throw new InvalidDataException("Cell state may nont be None now");
-            case CellState.Player1:
-                newCellState = CellState.Player2;
-                break;
-            case CellState.Player2:
-                newCellState = CellState.Player1;
-                break;
-            default:
-                throw new NotImplementedException("Case not implemented");
-        }
-        
+        CellState newCellState = currentCellState switch {
+            CellState.None => throw new InvalidDataException("Cell state may nont be None now"),
+            CellState.Player1 => CellState.Player2,
+            CellState.Player2 => CellState.Player1,
+            _ => throw new CaseNotImplementedException()
+        };
+
         this.SetCellState(cellX, cellY, newCellState);
     }
 

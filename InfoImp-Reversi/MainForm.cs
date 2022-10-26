@@ -16,9 +16,9 @@ public class MainForm : Form {
             AboutItem = new ButtonMenuItem {
                 Text = "Game rules",
                 Command = new Command((_, _) => {
-                    new HelpDialog(this).ShowModal(this);
+                    new HelpDialog().ShowModal(this);
                 })
-            }
+            },
         };
     }
 }
