@@ -87,6 +87,7 @@ public class PlayingGrid : Drawable {
                         return;
                     }
                 } else {
+                    GameManager.PlayerCouldNotPlay = true;
                     this.SwapPlayingPlayer();
                 }
             }
